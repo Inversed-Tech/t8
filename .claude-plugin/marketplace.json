@@ -1,0 +1,15 @@
+{
+  "name": "t8",
+  "description": "Threshold T8 Engine — Claude Code skills and plugins for integrating Inversed's policy-aware HTTP/MCP proxy into agentic workflows.",
+  "owner": {
+    "name": "Inversed",
+    "url": "https://inversed.tech"
+  },
+  "plugins": [
+    {
+      "name": "t8engine-setup",
+      "source": "./plugins/t8engine-setup",
+      "description": "Stand up a local T8 Engine instance via Docker Compose. Covers compose layout, route TOML, .env, optional rule-runner, two integration modes (HTTPS_PROXY+CA vs. HTTPS-prefix), and CA install for Debian/Alpine/RHEL/macOS."
+    }
+  ]
+}
