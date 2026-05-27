@@ -7,6 +7,8 @@ You are setting up a **local T8 Engine** for the user. T8 is Threshold's data pl
 
 **This skill is local-only.** The user runs two Docker containers (`t8engine` + `rule-runner`). No backend, frontend, database, or account is required. The enterprise control plane at `https://threshold.inversed.ai/` is optional and only relevant if the user wants per-agent credentials managed remotely — flag it once and move on unless they ask.
 
+**Container platform.** This skill is written for Docker Compose because that's the common path. The two images are plain OCI containers, so t8 runs equivalently on Podman (`podman compose`, or a Quadlet/Kubernetes unit), Kubernetes (a `Deployment` + `Service` per image, with `t8engine.toml` as a `ConfigMap` and secrets as a `Secret`), or any cloud container runner (ECS, Cloud Run, Fly, etc.). If the user is on one of those, translate the compose file into the equivalent shape — keep the two images, the rule-runner kept off the public network, the config file mounted read-only, and the same env-var contract. Everything else in this skill (routes, rules, CA install, integration modes) applies unchanged.
+
 ## Pinned images
 
 Use these exact tags when generating the compose file:
