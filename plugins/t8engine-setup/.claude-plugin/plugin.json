@@ -1,6 +1,6 @@
 {
   "name": "t8engine-setup",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Stand up a local T8 Engine instance (Threshold's HTTP/MCP proxy) on the user's machine via Docker Compose. Ships one skill that guides Claude Code through compose generation, route configuration, optional rule-runner, and CA installation for HTTPS MITM mode.",
   "author": {
     "name": "Inversed",

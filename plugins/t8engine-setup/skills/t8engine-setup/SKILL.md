@@ -40,7 +40,7 @@ services:
   t8engine:
     image: ghcr.io/inversed-tech/t8engine:v0.1
     ports:
-      - "${T8_PORT:-1800}:1800"
+      - "127.0.0.1:${T8_PORT:-1800}:1800"
     env_file:
       - path: .env
         required: false
@@ -76,6 +76,10 @@ Notes for you, the agent:
 - The rule-runner has no published port — it's only reached from t8engine over the compose network. Don't expose it on the host.
 - `T8_CA_SEED` is referenced from `.env`; if the user skips persistence, the variable resolves to empty and t8 generates a transient CA on each restart (fine, but the CA cert must be re-installed after every restart).
 - `RULE_RUNNER_URL` enables rule evaluation. To disable rules entirely, **remove** the line (don't set it to empty — the t8engine code treats unset as "skip rules"). Default: leave it in.
+- **Port binding — pick the least exposure that works.** The default `"127.0.0.1:${T8_PORT:-1800}:1800"` only reaches T8 from the same host. Adjust based on where the target agent runs:
+  - **Same compose project** (agent is another service in this `compose.yaml`): drop the `ports:` mapping entirely. Other services reach T8 at `http://t8engine:1800` over the compose network — no host port needed.
+  - **Same host, outside compose** (agent runs on the user's machine): keep the default `127.0.0.1:…` bind.
+  - **Different host** (agent on another machine/VM/container host): change the bind to `0.0.0.0:…` (or a specific LAN interface). Warn the user this exposes T8 to anything that can reach that interface — they should front it with TLS + auth, restrict via firewall, or use an SSH tunnel / Tailscale instead of binding publicly.
 
 #### `t8engine.toml`
 
