@@ -1,6 +1,6 @@
 # t8 — Claude Code plugins for Threshold
 
-This repo is a [Claude Code plugin marketplace](https://code.claude.com/docs/en/plugin-marketplaces.md) for integrating the [Threshold T8 Engine](https://github.com/Inversed-Tech/threshold) into agentic workflows.
+This repo is a [Claude Code plugin marketplace](https://code.claude.com/docs/en/plugin-marketplaces.md) for integrating the Threshold T8 Engine into agentic workflows. See the [landing page](https://inversed.ai/) for product context and the [technical docs](https://docs.inversed.ai/threshold/) for architecture.
 
 ## Install
 

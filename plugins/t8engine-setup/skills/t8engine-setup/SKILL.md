@@ -89,9 +89,8 @@ Start with a minimal placeholder so the user can `docker compose up` immediately
 
 ```toml
 # T8 Engine route + rule config. See:
-#   https://github.com/Inversed-Tech/threshold/blob/main/t8engine/t8engine.example.toml
-#   https://github.com/Inversed-Tech/threshold/blob/main/docs/t8engine.md
-#   https://github.com/Inversed-Tech/threshold/blob/main/docs/rule-scripts.md
+#   https://docs.inversed.ai/threshold/  (architecture overview and layer reference)
+#   https://inversed.ai/                 (product context)
 #
 # `${VAR_NAME}` is interpolated from the environment (loaded from .env).
 # An unset variable is a startup error; empty string is allowed.
@@ -271,7 +270,7 @@ The agent's code keeps `ANTHROPIC_API_KEY=t8-managed` (or any placeholder); T8 s
 
 ### Step 6 — Add a rule (optional)
 
-Rules are JS/TS functions that run for every proxied request. Full schema and examples: <https://github.com/Inversed-Tech/threshold/blob/main/docs/rule-scripts.md>.
+Rules are JS/TS functions that run for every proxied request. See the [Threshold docs](https://docs.inversed.ai/threshold/) for the architecture, and the [t8 marketplace repo](https://github.com/Inversed-Tech/t8) for plugin source.
 
 Minimal example — block a specific host:
 
