@@ -1,0 +1,75 @@
+# T8 customer-DB demo stack. Four services:
+#   t8engine + rule-runner  — the Threshold data plane
+#   mock-db                 — sensitive 'customer database' API (requires the real key)
+#   attacker                — exfiltration canary (logs anything it receives)
+# Runs on 18020 so it won't collide with the primary T8 (1800) or simple demo (18010).
+services:
+  t8engine:
+    image: ghcr.io/inversed-tech/t8engine:v0.1
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:${T8_PORT:-18020}:1800"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      T8_CONFIG_FILE: /t8engine.toml
+      T8_CA_SEED: ${T8_CA_SEED:-}
+      RULE_RUNNER_URL: http://rule-runner:8080
+      # referenced by routes/rules in t8engine.toml — must exist (empty is allowed)
+      DEMO_DB_KEY: ${DEMO_DB_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ALLOWED_CUSTOMER_RANGE: ${ALLOWED_CUSTOMER_RANGE:-42}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-mock-db,api.anthropic.com}
+      DB_WRITES_ALLOWED: ${DB_WRITES_ALLOWED:-false}
+    volumes:
+      - ./t8engine.toml:/t8engine.toml:ro
+    depends_on:
+      - rule-runner
+      - mock-db
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:1800/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+
+  rule-runner:
+    image: ghcr.io/inversed-tech/rule-runner:v0.1
+    platform: linux/amd64
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/healthz').then(r=>r.ok||process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mock-db:
+    image: python:3.12-slim
+    command: ["python", "/app/mock_db.py"]
+    environment:
+      DEMO_DB_KEY: ${DEMO_DB_KEY:-}
+      PORT: "8090"
+    volumes:
+      - ./mock_db.py:/app/mock_db.py:ro
+    ports:
+      - "127.0.0.1:8090:8090"   # published so the --no-t8 counterfactual can hit it directly
+
+  attacker:
+    image: python:3.12-slim
+    command: ["python", "/app/attacker.py"]
+    environment:
+      PORT: "8091"
+    volumes:
+      - ./attacker.py:/app/attacker.py:ro
+    ports:
+      - "127.0.0.1:8091:8091"   # published so the counterfactual leak is visible from the host
+
+  partner:
+    image: python:3.12-slim
+    command: ["python", "/app/partner.py"]
+    environment:
+      PORT: "8092"
+    volumes:
+      - ./partner.py:/app/partner.py:ro
+    ports:
+      - "127.0.0.1:8092:8092"

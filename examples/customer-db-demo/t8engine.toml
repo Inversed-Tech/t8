@@ -1,0 +1,83 @@
+# ============================================================================
+# T8 customer-DB demo policy
+#
+# An AI agent is scoped to read ONE customer record (id 42) from an internal
+# database, and to reach nothing else. It holds NO real credentials. T8:
+#   - injects the real DB key + the real model key (credential isolation)
+#   - allows egress only to the database and the model provider (egress control)
+#   - permits reads of customer 42 ONLY — no bulk reads, no other rows (row-level)
+#   - permits read methods only on the database (no writes/deletes)
+#
+# Rules evaluate in order; the first deny wins and returns HTTP 403.
+# ============================================================================
+
+# --- Credential injection: real DB key, held only by T8 ----------------------
+[[routes]]
+    prefix = "http://mock-db:8090"
+    [routes.headers]
+        authorization = "Bearer ${DEMO_DB_KEY}"
+
+# --- Credential injection: real model key, held only by T8 -------------------
+[[routes]]
+    prefix = "https://api.anthropic.com"
+    [routes.headers]
+        x-api-key = "${ANTHROPIC_API_KEY}"
+
+# --- Rule 1: egress allowlist (anti-exfiltration) ----------------------------
+[[rules]]
+id = "egress-allowlist"
+script = """
+function rule(ctx) {
+  var ALLOW = "${ALLOWED_HOSTS}".split(',').map(function (s) { return s.trim(); });  // admin-controlled
+  if (ctx.kind !== 'http') return { action: 'allow' };
+  var host = (ctx.host || '').split(':')[0];   // ctx.host includes the port; match on hostname
+  if (ALLOW.indexOf(host) === -1) {
+    return { action: 'deny', reason: 'Egress to ' + host + ' is blocked — not on the approved allowlist (' + ALLOW.join(', ') + ')' };
+  }
+  return { action: 'allow' };
+}
+"""
+
+# --- Rule 2: database is read-only -------------------------------------------
+[[rules]]
+id = "db-read-only"
+script = """
+function rule(ctx) {
+  var WRITES_ALLOWED = ("${DB_WRITES_ALLOWED}" === "true");   // admin-controlled
+  var host = (ctx.host || '').split(':')[0];
+  if (host === 'mock-db' && ctx.method !== 'GET' && !WRITES_ALLOWED) {
+    return { action: 'deny', reason: ctx.method + ' on the database is not permitted (read-only policy)' };
+  }
+  return { action: 'allow' };
+}
+"""
+
+# --- Rule 3: row-level scope — admin-controlled ------------------------------
+# The authorized customer set is injected from .env at config load via
+# ${ALLOWED_CUSTOMER_RANGE}. The admin widens/narrows access by changing that one
+# value (see ./admin.sh) and restarting — no rule code is edited. Accepts a
+# comma list of ids and ranges, e.g. "42"  or  "131-246"  or  "42,131-246".
+[[rules]]
+id = "row-scope"
+script = """
+function rule(ctx) {
+  var host = (ctx.host || '').split(':')[0];
+  if (host !== 'mock-db') return { action: 'allow' };
+  var SPEC = "${ALLOWED_CUSTOMER_RANGE}";          // injected from .env by the admin
+  var m = ctx.path.match(/^\\/customers\\/(\\d+)/);
+  if (m) {
+    var id = parseInt(m[1], 10);
+    var ok = SPEC.split(',').some(function (tok) {
+      tok = tok.trim();
+      if (tok.indexOf('-') > -1) { var p = tok.split('-'); return id >= parseInt(p[0], 10) && id <= parseInt(p[1], 10); }
+      return id === parseInt(tok, 10);
+    });
+    if (ok) return { action: 'allow' };
+    return { action: 'deny', reason: 'Customer ' + id + ' is outside the authorized scope (' + SPEC + ')' };
+  }
+  if (ctx.path.indexOf('/customers') === 0) {
+    return { action: 'deny', reason: 'Bulk read of the customer table is not permitted; authorized scope is ' + SPEC };
+  }
+  return { action: 'allow' };
+}
+"""

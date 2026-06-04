@@ -1,0 +1,2 @@
+# The demo agent uses the Anthropic SDK (which bundles httpx). Python 3.9+.
+anthropic>=0.40
