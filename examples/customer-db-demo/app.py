@@ -18,6 +18,10 @@ DEMO_DIR = Path(__file__).parent.resolve()
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 RULE_LINE = re.compile(r"^[─━]+$")
 
+# Stack services the Boot/Down buttons act on. Deliberately excludes demo-runner
+# (this very dashboard) so we don't kill ourselves when running inside Docker.
+STACK_SERVICES = ["t8engine", "rule-runner", "mock-db", "partner", "attacker"]
+
 st.set_page_config(page_title="T8 Customer-DB Demo", layout="wide")
 
 
@@ -207,14 +211,15 @@ with st.sidebar:
     c1, c2 = st.columns(2)
     if c1.button("Boot", use_container_width=True):
         with st.spinner("docker compose up -d"):
-            docker_compose(["up", "-d"])
+            docker_compose(["up", "-d", *STACK_SERVICES])
         invalidate_state()
         st.toast("Stack up")
-    if c2.button("Down", use_container_width=True):
-        with st.spinner("docker compose down"):
-            docker_compose(["down"])
+    if c2.button("Stop", use_container_width=True,
+                 help="Stops the demo services but leaves this dashboard running."):
+        with st.spinner("docker compose stop"):
+            docker_compose(["stop", *STACK_SERVICES])
         invalidate_state()
-        st.toast("Stack down")
+        st.toast("Stack stopped")
     with st.expander("Services", expanded=False):
         st.code(stack_status(), language="text")
 

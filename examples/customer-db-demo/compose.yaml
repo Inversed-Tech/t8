@@ -1,8 +1,16 @@
-# T8 customer-DB demo stack. Four services:
+# T8 customer-DB demo stack. Services:
 #   t8engine + rule-runner  — the Threshold data plane
 #   mock-db                 — sensitive 'customer database' API (requires the real key)
+#   partner                 — benign enrichment API (off-allowlist by default)
 #   attacker                — exfiltration canary (logs anything it receives)
+#   demo-runner             — Streamlit dashboard + agent.py + admin.sh (governed BY T8)
 # Runs on 18020 so it won't collide with the primary T8 (1800) or simple demo (18010).
+#
+# Pin the project name so admin.sh inside demo-runner controls the SAME compose
+# project as the host (default project name is the cwd basename, which differs
+# between host and container).
+name: customer-db-demo
+
 services:
   t8engine:
     image: ghcr.io/inversed-tech/t8engine:v0.1
@@ -73,3 +81,38 @@ services:
       - ./partner.py:/app/partner.py:ro
     ports:
       - "127.0.0.1:8092:8092"
+
+  # The Streamlit dashboard + the agent + the admin control plane, all containerised.
+  # Mounts the host docker socket so admin.sh can `docker compose ...` to recreate
+  # t8engine/rule-runner when policy changes. The bind mount uses the SAME path on
+  # both sides (${PWD}:${PWD}) so the relative volume paths in this compose file
+  # resolve identically whether docker compose runs on the host or in this container.
+  demo-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.runner
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      T8_URL: http://t8engine:1800
+      T8_HEALTHCHECK: http://t8engine:1800/healthz
+      MODEL: ${MODEL:-claude-sonnet-4-6}
+      DEMO_DB_KEY: ${DEMO_DB_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ${PWD}:${PWD}
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: ${PWD}
+    ports:
+      - "127.0.0.1:${APP_PORT:-8501}:8501"
+    depends_on:
+      - t8engine
+    command:
+      - sh
+      - -c
+      - |
+        echo "▸ fetching demo CA from $$T8_URL …"
+        until curl -fsS "$$T8_URL/ca.crt" -o demo-ca.crt 2>/dev/null; do sleep 1; done
+        echo "▸ CA fetched; launching streamlit on :8501"
+        exec streamlit run app.py --server.address=0.0.0.0 --server.port=8501 --server.headless=true

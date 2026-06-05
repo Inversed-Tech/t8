@@ -9,35 +9,43 @@ prompt-injection resistance — and shows an admin widening/narrowing each of th
 
 ```bash
 cd ~/t8engine-local/demo-db
-./demo.sh            # the full story, paced (Enter to advance each beat)
-./demo.sh --auto     # same, no pauses
+cp .env.example .env         # edit .env -> ANTHROPIC_API_KEY=sk-ant-...
+docker compose up -d --build # brings the stack AND the dashboard up
+open http://localhost:8501
 ```
 
-Or as a UI:
-```bash
-docker compose up -d         # boot stack (the dashboard's sidebar can also do this)
-streamlit run app.py         # same beats, admin controls in the sidebar
-```
+The dashboard (`demo-runner`) runs the same beats as `demo.sh`, with the admin control plane
+in the sidebar and a live attacker canary.
 
-Other entry points:
+Host-side alternatives (Python required locally):
 ```bash
+./demo.sh                    # paced terminal story (Enter to advance each beat)
+./demo.sh --auto             # same, no pauses
 python3 agent.py             # interactive — type requests, drive it yourself
 python3 agent.py --selftest  # tools only, no model/key — quick mechanics check
 ./admin.sh show              # current policy
+```
+
+Or shell into the container instead of installing locally:
+```bash
+docker compose exec demo-runner python3 agent.py
+docker compose exec demo-runner ./admin.sh show
 ```
 
 ## One-time setup
 
 ```bash
 # 1) put your real key where ONLY T8 can see it:  edit .env -> ANTHROPIC_API_KEY=sk-ant-...
-# 2) fetch the demo CA the agent trusts:
-curl -fsS http://localhost:18020/ca.crt -o demo-ca.crt
+# 2) (containerised path) docker compose up fetches the demo CA automatically.
+#    (host path)         curl -fsS http://localhost:18020/ca.crt -o demo-ca.crt
 ```
-`demo.sh`/`admin.sh` boot the stack for you. After any manual `.env`/`t8engine.toml` edit, use
-`docker compose down && docker compose up -d` (a single-service recreate won't reload — the
-rule-runner caches compiled rules; `admin.sh` already does the full restart).
+After any manual `.env`/`t8engine.toml` edit, `admin.sh` recreates `t8engine` + `rule-runner`
+in place (it does NOT bring the rest of the stack down — the dashboard keeps running).
+Empirically (v0.1) both must restart for new env values to take effect — recreating just
+t8engine leaves the previous compiled rule live in rule-runner. For deeper changes (adding
+services, editing `compose.yaml`), `docker compose up -d --build` re-applies cleanly.
 
-## The world (5 local services)
+## The world (6 local services)
 
 | Service | Role |
 |---|---|
@@ -45,6 +53,7 @@ rule-runner caches compiled rules; `admin.sh` already does the full restart).
 | `mock-db` | sensitive 500-row customer DB; **requires the real key, rejects placeholders** |
 | `partner` | benign enrichment API, **off the allowlist by default** (egress-knob payoff) |
 | `attacker` | exfil canary — logs anything it receives (the "empty pane" proof) |
+| `demo-runner` | Streamlit dashboard + agent + admin tooling; itself **governed by T8** |
 
 ## Why this is convincing (the proof devices)
 

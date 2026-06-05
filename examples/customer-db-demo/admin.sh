@@ -22,10 +22,20 @@ _set() {
   else printf '%s=%s\n' "$1" "$2" >> .env; fi
 }
 _apply() {
-  echo "▸ applying policy (full restart so the rule-runner reloads)…"
-  docker compose down >/dev/null 2>&1
-  docker compose up -d >/dev/null 2>&1
-  for i in $(seq 1 30); do curl -fsS "http://localhost:${PORT}/healthz" >/dev/null 2>&1 && break || sleep 1; done
+  echo "▸ applying policy (recreating t8engine + rule-runner so they reload)…"
+  # Re-export the freshly-edited .env into this shell, so docker compose's variable
+  # interpolation sees the NEW values. (Without this, when admin.sh runs inside the
+  # demo-runner container, the runner's boot-time env_file values would still be in
+  # the shell and would override the updated .env file.)
+  set -a; . ./.env; set +a
+  # Both t8engine AND rule-runner must be recreated. Empirically (v0.1) the new SPEC
+  # only takes effect once rule-runner is replaced too — recreating just t8engine
+  # leaves the previous compiled rule live. --no-deps keeps mock-db / partner /
+  # attacker / demo-runner up (the runner must not be torn down when admin.sh is
+  # invoked from inside it).
+  docker compose up -d --force-recreate --no-deps t8engine rule-runner >/dev/null 2>&1
+  health="${T8_HEALTHCHECK:-http://localhost:${PORT}/healthz}"
+  for i in $(seq 1 30); do curl -fsS "$health" >/dev/null 2>&1 && break || sleep 1; done
   echo "▸ live."
 }
 

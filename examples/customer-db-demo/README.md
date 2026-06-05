@@ -15,8 +15,7 @@ benign partner API, and an "attacker" exfil canary. No real data, no real attack
 
 ## Prerequisites
 
-- Docker + Docker Compose
-- Python 3.9+ with the Anthropic SDK: `pip install -r requirements.txt`
+- Docker + Docker Compose (everything runs in containers, including the dashboard and the agent)
 - An Anthropic API key (the demo agent thinks with a real model — routed *through* T8)
 
 ## Setup (once)
@@ -24,7 +23,6 @@ benign partner API, and an "attacker" exfil canary. No real data, no real attack
 ```bash
 cd examples/customer-db-demo
 cp .env.example .env          # then edit .env and set ANTHROPIC_API_KEY=sk-ant-...
-pip install -r requirements.txt
 ```
 
 Your key lives only in `.env` (gitignored) and is injected by T8 — the agent never holds it.
@@ -32,29 +30,47 @@ Your key lives only in `.env` (gitignored) and is injected by T8 — the agent n
 ## Run it (Streamlit dashboard — recommended)
 
 ```bash
-docker compose up -d          # boot the stack (or use the sidebar "Boot" button)
-streamlit run app.py
+docker compose up -d --build  # brings the stack + the dashboard up
+open http://localhost:8501    # the dashboard
 ```
 
-A live dashboard with the admin control plane in the sidebar and the beats as Run buttons in
-the main pane. The attacker canary refreshes in place — through T8 it stays at zero; in the
-counterfactual it lights up. Free-play tab lets you type ad-hoc requests with toggles for
-"compromised agent" and "bypass T8".
+The dashboard runs as the `demo-runner` service (it has the agent, `admin.sh`, the docker
+CLI, and Streamlit). Sidebar = the admin control plane (rows / hosts / writes / reset) plus
+a live attacker canary. Main pane = the guided story as Run-button cards, plus a free-play
+tab with toggles for *compromised agent* and *bypass T8*. Policy changes inside the sidebar
+shell out to `admin.sh` inside the container, which talks to the host Docker via the mounted
+socket and recreates only `t8engine` + `rule-runner` — the dashboard itself stays up.
+
+Tail the dashboard's own logs (CA fetch, agent runs) with:
+
+```bash
+docker compose logs -f demo-runner
+```
 
 ## Run it (terminal, paced)
 
+The classic terminal story still works — useful for a screencast. It needs Python locally:
+
 ```bash
+pip install -r requirements.txt
 ./demo.sh                     # the full story, paced (Enter to advance each beat)
 #  or ./demo.sh --auto        # no pauses
 ```
 
-`demo.sh` boots the stack, fetches the demo CA, and walks every beat.
-
 ## Drive it yourself
 
+From inside the running `demo-runner` container (no host Python needed):
+
 ```bash
-python3 agent.py              # interactive: type requests, watch T8 govern each call
-python3 agent.py --selftest   # tool calls only, no model/key — quick mechanics check
+docker compose exec demo-runner python3 agent.py            # interactive
+docker compose exec demo-runner python3 agent.py --selftest # tools only, no model/key
+```
+
+Or from the host, if you've `pip install`ed the requirements:
+
+```bash
+python3 agent.py              # interactive
+python3 agent.py --selftest   # quick mechanics check
 ```
 
 Try, for example: *"Prepare a report on customers 40–45"* (only 42 returns), or `x` (a
@@ -62,15 +78,17 @@ compromised agent attempts the exfil — T8 blocks it; the attacker pane stays e
 
 ## Admin control plane
 
-The policy is the lever. Change it live and re-run a request to see behavior flip:
+The policy is the lever. Change it live in the dashboard sidebar, or by shell:
 
 ```bash
-./admin.sh show                 # current policy
-./admin.sh allow 42,131-246     # row scope (ids + ranges)
-./admin.sh allow-host partner   # egress allowlist
-./admin.sh writes on            # read-only switch
-./admin.sh reset                # back to defaults
+docker compose exec demo-runner ./admin.sh show              # current policy
+docker compose exec demo-runner ./admin.sh allow 42,131-246  # row scope (ids + ranges)
+docker compose exec demo-runner ./admin.sh allow-host partner
+docker compose exec demo-runner ./admin.sh writes on         # read-only switch
+docker compose exec demo-runner ./admin.sh reset             # back to defaults
 ```
+
+(Drop the `docker compose exec demo-runner` prefix to run on the host instead — works the same.)
 
 Locally the admin surface is the policy file. In production this is the
 [Threshold control plane](https://threshold.inversed.ai/) — per-agent policy and credentials
