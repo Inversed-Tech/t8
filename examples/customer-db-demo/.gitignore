@@ -1,0 +1,5 @@
+# Never commit the real key or the fetched CA.
+.env
+demo-ca.crt
+*.bak
+__pycache__/

@@ -19,6 +19,12 @@ That's it. The `t8engine-setup` skill becomes available immediately — ask Clau
 |---|---|
 | [`t8engine-setup`](./plugins/t8engine-setup) | Stands up a local T8 Engine (proxy + rule-runner) via Docker Compose, configures routes/rules, and walks through the two integration modes (HTTPS prefix vs. HTTPS proxy + CA). |
 
+## Examples
+
+| Example | What it shows |
+|---|---|
+| [`customer-db-demo`](./examples/customer-db-demo) | A runnable demo: a **real Claude agent holding zero real credentials**, governed by T8. Shows credential isolation, least-privilege row access, egress control, read-only enforcement, injection/exfil resistance, and a live **admin control plane** — all locally in Docker. `cd examples/customer-db-demo && ./demo.sh`. |
+
 ## Updating
 
 To pull newer plugin versions:
@@ -36,6 +42,8 @@ plugins/
   t8engine-setup/
     .claude-plugin/plugin.json      ← plugin manifest
     skills/t8engine-setup/SKILL.md  ← the skill itself
+examples/
+  customer-db-demo/                 ← runnable T8 governance demo (./demo.sh)
 ```
 
 ## License
