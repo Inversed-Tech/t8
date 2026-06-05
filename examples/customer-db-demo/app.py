@@ -226,10 +226,16 @@ with st.sidebar:
     st.divider()
     st.subheader("Admin policy")
     policy = get_policy()
-    pc1, pc2, pc3 = st.columns(3)
-    pc1.metric("rows", policy["rows"])
-    pc2.metric("hosts", policy["hosts"] or "—")
-    pc3.metric("writes", policy["writes"])
+    # Vertical key/value layout — the sidebar is too narrow for st.metric in three
+    # columns (host lists like "mock-db,api.anthropic.com" get truncated to "mo..").
+    st.markdown(
+        f"<div style='line-height:1.5'>"
+        f"<b>rows</b> &nbsp; <code style='word-break:break-all'>{policy['rows']}</code><br>"
+        f"<b>hosts</b> &nbsp; <code style='word-break:break-all'>{policy['hosts'] or '—'}</code><br>"
+        f"<b>writes</b> &nbsp; <code>{policy['writes']}</code>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
     rows_spec = st.text_input("allow rows", value="", placeholder="42,131-246",
                               help="ids and ranges, e.g. 42  131-246  42,131-246")
