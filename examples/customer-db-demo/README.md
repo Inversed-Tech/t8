@@ -19,20 +19,36 @@ benign partner API, and an "attacker" exfil canary. No real data, no real attack
 - Python 3.9+ with the Anthropic SDK: `pip install -r requirements.txt`
 - An Anthropic API key (the demo agent thinks with a real model — routed *through* T8)
 
-## Run it
+## Setup (once)
 
 ```bash
 cd examples/customer-db-demo
-cp .env.example .env          # demo.sh also does this automatically
-#  → edit .env and set ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env          # then edit .env and set ANTHROPIC_API_KEY=sk-ant-...
 pip install -r requirements.txt
+```
 
+Your key lives only in `.env` (gitignored) and is injected by T8 — the agent never holds it.
+
+## Run it (Streamlit dashboard — recommended)
+
+```bash
+docker compose up -d          # boot the stack (or use the sidebar "Boot" button)
+streamlit run app.py
+```
+
+A live dashboard with the admin control plane in the sidebar and the beats as Run buttons in
+the main pane. The attacker canary refreshes in place — through T8 it stays at zero; in the
+counterfactual it lights up. Free-play tab lets you type ad-hoc requests with toggles for
+"compromised agent" and "bypass T8".
+
+## Run it (terminal, paced)
+
+```bash
 ./demo.sh                     # the full story, paced (Enter to advance each beat)
 #  or ./demo.sh --auto        # no pauses
 ```
 
-`demo.sh` boots the stack, fetches the demo CA, and walks every beat. Your key lives only in
-`.env` (gitignored) and is injected by T8 — the agent never holds it.
+`demo.sh` boots the stack, fetches the demo CA, and walks every beat.
 
 ## Drive it yourself
 

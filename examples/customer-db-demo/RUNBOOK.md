@@ -13,6 +13,12 @@ cd ~/t8engine-local/demo-db
 ./demo.sh --auto     # same, no pauses
 ```
 
+Or as a UI:
+```bash
+docker compose up -d         # boot stack (the dashboard's sidebar can also do this)
+streamlit run app.py         # same beats, admin controls in the sidebar
+```
+
 Other entry points:
 ```bash
 python3 agent.py             # interactive — type requests, drive it yourself
