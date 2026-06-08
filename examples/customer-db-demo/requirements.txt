@@ -1,2 +1,4 @@
 # The demo agent uses the Anthropic SDK (which bundles httpx). Python 3.9+.
 anthropic>=0.40
+# Streamlit dashboard (app.py) — alternative UI to demo.sh.
+streamlit>=1.32
