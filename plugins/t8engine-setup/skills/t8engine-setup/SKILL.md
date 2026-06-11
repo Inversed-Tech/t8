@@ -14,7 +14,7 @@ You are setting up a **local T8 Engine** for the user. T8 is Threshold's data pl
 Use these exact tags when generating the compose file:
 
 - `ghcr.io/inversed-tech/t8engine:v0.2.0`
-- `ghcr.io/inversed-tech/rule-runner:v0.2.0`
+- `ghcr.io/inversed-tech/rule-runner:v0.1`
 
 If the user later wants to upgrade, they pull a newer published tag from `ghcr.io/inversed-tech/t8engine` and `ghcr.io/inversed-tech/rule-runner`.
 
@@ -71,7 +71,7 @@ services:
       start_period: 2s
 
   rule-runner:
-    image: ghcr.io/inversed-tech/rule-runner:v0.2.0
+    image: ghcr.io/inversed-tech/rule-runner:v0.1
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8080/healthz').then(r=>r.ok||process.exit(1)).catch(()=>process.exit(1))"]
       interval: 5s
