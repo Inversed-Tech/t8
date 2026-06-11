@@ -1,6 +1,6 @@
 ---
 name: t8engine-setup
-description: Stand up a local T8 Engine instance (Threshold's HTTP/MCP proxy) on the user's machine via Docker Compose. Use when the user wants to "install t8engine", "set up Threshold locally", route an agent's HTTPS traffic through a policy proxy, install permission rules in front of an LLM/tool API, or get a CA-trusted HTTPS MITM dev proxy. Covers compose layout, route TOML, .env, optional rule-runner, two integration modes (HTTPS_PROXY+CA vs. HTTPS-prefix), and CA install for Debian/Alpine/RHEL/macOS.
+description: Stand up a local T8 Engine instance (Threshold's HTTP/MCP proxy) on the user's machine via Docker Compose. Use when the user wants to "install t8engine", "set up Threshold locally", route an agent's HTTPS traffic through a policy proxy, install permission rules in front of an LLM/tool API, or get a CA-trusted HTTPS MITM dev proxy. Covers compose layout, route TOML, .env, optional rule-runner, two integration modes (HTTPS_PROXY+CA vs. HTTPS-prefix), CA install for Debian/Alpine/RHEL/macOS, and agent-activity event logging (stdout JSON + optional remote ingest to the Threshold dashboard).
 ---
 
 You are setting up a **local T8 Engine** for the user. T8 is Threshold's data plane: a small HTTP/MCP proxy that sits in front of upstream APIs (LLMs, tool servers, etc.) and intercepts agent traffic so policies, credential swaps, and audit hooks can be applied without changing agent code.
@@ -13,8 +13,8 @@ You are setting up a **local T8 Engine** for the user. T8 is Threshold's data pl
 
 Use these exact tags when generating the compose file:
 
-- `ghcr.io/inversed-tech/t8engine:v0.1`
-- `ghcr.io/inversed-tech/rule-runner:v0.1`
+- `ghcr.io/inversed-tech/t8engine:v0.2.0`
+- `ghcr.io/inversed-tech/rule-runner:v0.2.0`
 
 If the user later wants to upgrade, they pull a newer published tag from `ghcr.io/inversed-tech/t8engine` and `ghcr.io/inversed-tech/rule-runner`.
 
@@ -40,7 +40,7 @@ Inside the chosen directory, create three files:
 ```yaml
 services:
   t8engine:
-    image: ghcr.io/inversed-tech/t8engine:v0.1
+    image: ghcr.io/inversed-tech/t8engine:v0.2.0
     ports:
       - "127.0.0.1:${T8_PORT:-1800}:1800"
     env_file:
@@ -53,6 +53,12 @@ services:
       # Optional: connect to the enterprise control plane for per-agent
       # credentials. Leave empty for purely local operation.
       CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-}
+      # Optional: ship agent-activity events to Threshold for in-product
+      # analytics. Unset = events go to stdout only (the default). See the
+      # "Observing agent activity" section below.
+      EVENTS_ENDPOINT: ${EVENTS_ENDPOINT:-}
+      EVENTS_AUTH_TOKEN: ${EVENTS_AUTH_TOKEN:-}
+      EVENTS_DEPLOYMENT_ID: ${EVENTS_DEPLOYMENT_ID:-}
     volumes:
       - ./t8engine.toml:/t8engine.toml:ro
     depends_on:
@@ -65,7 +71,7 @@ services:
       start_period: 2s
 
   rule-runner:
-    image: ghcr.io/inversed-tech/rule-runner:v0.1
+    image: ghcr.io/inversed-tech/rule-runner:v0.2.0
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:8080/healthz').then(r=>r.ok||process.exit(1)).catch(()=>process.exit(1))"]
       interval: 5s
@@ -137,6 +143,14 @@ T8_CA_SEED=
 # Optional: enterprise control plane for per-agent credential management.
 # Leave empty for purely local operation.
 # CONTROL_PLANE_URL=https://threshold.inversed.ai
+
+# Optional: remote agent-activity event ingestion to Threshold's cloud
+# dashboard. Leave all three unset to keep events on stdout only (default).
+# EVENTS_AUTH_TOKEN is a single t8ak_ for THIS t8engine deployment (not a
+# per-agent key). See the "Observing agent activity" section of the skill.
+# EVENTS_ENDPOINT=https://threshold.inversed.ai/t8/events
+# EVENTS_AUTH_TOKEN=t8ak_...
+# EVENTS_DEPLOYMENT_ID=edge-eu-1
 
 # Optional: alternate host port (default 1800).
 # T8_PORT=18000
@@ -313,7 +327,7 @@ curl -v -x http://localhost:1800 https://example.com/
 docker compose logs t8engine --tail=20
 ```
 
-A successful proxied call logs a `"proxy"` line with `target`, `via`, and (if matched) `rewrite`.
+A successful proxied call emits one structured **agent-activity event** (`"event.name": "t8.agent.request"`) on stdout — see "Observing agent activity" below for the shape. (The old per-request `"proxy"` info line was demoted to debug in v0.2.0; it's now redundant with the event.)
 
 ## Integration modes — quick reference
 
@@ -323,6 +337,75 @@ A successful proxied call logs a `"proxy"` line with `target`, `via`, and (if ma
 | CA install needed | No | Yes (see Step 4) |
 | Coverage | Only APIs whose base URL is configurable | All outbound HTTPS |
 | Good for | SDK-based agents (Anthropic/OpenAI/Gemini SDKs) | Black-box agents, MCP clients, mixed tooling |
+
+## Observing agent activity (logging)
+
+New in **v0.2.0**: T8 Engine emits a structured **agent-activity event** for every proxied request, in addition to its ordinary software logs. This is the main reason to be on `v0.2.0` rather than `v0.1`.
+
+Two streams come out of t8engine's stdout, both as JSON lines:
+
+- **Software logs** — Fastify/pino lifecycle, errors, debug breadcrumbs. Operational, short-lived. These have **no** `event.name` field.
+- **Agent-activity events** — exactly one per proxied request, emitted at completion (after the rule verdict and after the upstream responds or errors). Each carries `"event.name": "t8.agent.request"`. This is the product-analytics stream: what each agent did, when, with what outcome.
+
+Downstream tooling separates the two by filtering on the presence of `event.name`.
+
+### Reading events from stdout (default — no config)
+
+With **no `EVENTS_*` env vars set**, events go to stdout only. Nothing leaves the user's machine. Filter for them with `jq`:
+
+```bash
+docker compose logs t8engine | jq -c 'select(."event.name" == "t8.agent.request")'
+```
+
+Each event follows the [OpenTelemetry Logs/Events](https://opentelemetry.io/docs/specs/otel/logs/event-api/) envelope:
+
+```jsonc
+{
+  "event.name": "t8.agent.request",
+  "timestamp": "2026-06-02T10:15:32.418Z",
+  "severity_text": "INFO",                  // INFO allowed · WARN denied/client_disconnect · ERROR upstream_error
+  "body": "agent request: POST api.anthropic.com/v1/messages → allowed (200)",
+  "attributes": {
+    // OTel HTTP semantic conventions
+    "http.request.method":       "POST",
+    "url.full":                  "https://api.anthropic.com/v1/messages",
+    "server.address":            "api.anthropic.com",
+    "http.response.status_code": 200,
+    "http.response.duration":    142,             // ms
+
+    // T8-namespaced
+    "t8.agent.id":            "agent-abc",         // JWT sub, or null in local mode
+    "t8.mode":                "httpProxy",         // httpsPrefix | httpProxy | mitm | ws
+    "t8.route.via":           "localConfig",       // localConfig | agentConfig | passThrough
+    "t8.route.upstream_url":  "https://api.anthropic.com/v1/messages",
+    "t8.rules.evaluated":     ["block-evil"],      // every rule that ran, in order
+    "t8.rules.denied_by":     "block-evil",        // only present on a deny
+    "t8.outcome":             "allowed",           // allowed | denied | upstream_error | client_disconnect
+    "t8.deny.reason":         "host blocked by policy"  // only present on a deny
+  }
+}
+```
+
+The stdout stream is yours to ship anywhere — Loki, Splunk, Datadog, S3, a file. T8 doesn't prescribe a collector. This is the recommended setup for a local / self-hosted install.
+
+### Optional: ship events to the Threshold dashboard (remote ingest)
+
+If the user wants their agent activity in Threshold's hosted dashboard (the enterprise cloud at `https://threshold.inversed.ai/`) for long-term analytics, set three env vars in `.env`:
+
+```bash
+EVENTS_ENDPOINT=https://threshold.inversed.ai/t8/events
+EVENTS_AUTH_TOKEN=t8ak_...      # one t8ak_ for THIS deployment, not a per-agent key
+EVENTS_DEPLOYMENT_ID=edge-eu-1  # optional free-form label for this instance
+```
+
+then `docker compose up -d --force-recreate t8engine`. Behaviour:
+
+- **Additive, not a replacement** — setting `EVENTS_ENDPOINT` adds a remote sink; the local stdout stream stays on. Unset it and everything reverts to local-only.
+- t8engine batches events in memory (≈50 events or 5 s) and HTTPS-POSTs them to the backend, which enriches each with `team_id` / `deployment_id` / `ingested_at` and lands them in long-term analytics storage.
+- **Bounded queue** (~10 000 events) with FIFO eviction during backend outages, **exponential backoff** on 5xx/network errors, **terminal drop** on 4xx (a malformed batch won't succeed on retry), and a **graceful flush** of pending events on SIGTERM/SIGINT.
+- `EVENTS_AUTH_TOKEN` is a single deployment-level `t8ak_` (minted like any other agent key, attached to an agent that represents this deployment) — *not* the per-agent credential t8engine forwards upstream. Agent identity travels inside each event's `t8.agent.id`. This requires `CONTROL_PLANE_URL` / a Threshold account; without remote ingest none of it is needed.
+
+Don't push remote ingest for a purely local install — default to stdout and mention the dashboard only if the user wants hosted analytics.
 
 ## Enterprise control plane (optional, mention briefly)
 
