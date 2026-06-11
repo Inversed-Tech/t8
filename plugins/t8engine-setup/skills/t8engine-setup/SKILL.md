@@ -198,7 +198,15 @@ The agent sets `HTTPS_PROXY` and trusts T8's CA. Every outbound HTTPS connection
 
 ```bash
 export HTTPS_PROXY=http://localhost:1800
+export NO_PROXY=localhost,127.0.0.1,172.18.0.1
 ```
+
+**`NO_PROXY` is not optional — set it alongside `HTTPS_PROXY`.** Without it, the agent tries to reach T8 *through* T8 (and routes other local traffic through the proxy too), which loops or breaks:
+
+- `localhost,127.0.0.1` — so the connection to T8 itself (and any other loopback service) bypasses the proxy. Omitting these is the most common "nothing works after I set HTTPS_PROXY" cause.
+- `172.18.0.1` — the default Docker bridge gateway. When the agent runs in a *sibling* container and reaches T8 via the host gateway, this keeps that hop from being re-proxied. Confirm the actual gateway with `docker network inspect <network> -f '{{(index .IPAM.Config 0).Gateway}}'` — it's usually `172.18.0.1` but can differ (`172.17.0.1`, etc.) depending on which compose/bridge network is in use.
+
+**If the agent is itself a compose service**, decide per-destination what T8 should filter. Add to `NO_PROXY` every in-compose hostname the agent talks to that should *not* be policed (databases, caches, the `rule-runner`, internal sidecars) — e.g. `NO_PROXY=localhost,127.0.0.1,172.18.0.1,rule-runner,postgres,redis`. Leave *out* of `NO_PROXY` any upstream you do want T8 to intercept (e.g. `api.anthropic.com`), since matching `NO_PROXY` means "skip the proxy". When in doubt, list internal service names explicitly rather than broadening to a whole domain.
 
 Then install the CA — see Step 4.
 
@@ -311,7 +319,7 @@ A successful proxied call logs a `"proxy"` line with `target`, `via`, and (if ma
 
 | | HTTPS Prefix (Option A) | HTTPS Proxy + CA (Option B) |
 |---|---|---|
-| Agent env var | `…_BASE_URL=http://localhost:1800/<upstream>` | `HTTPS_PROXY=http://localhost:1800` |
+| Agent env var | `…_BASE_URL=http://localhost:1800/<upstream>` | `HTTPS_PROXY=http://localhost:1800` + `NO_PROXY=localhost,127.0.0.1,172.18.0.1` |
 | CA install needed | No | Yes (see Step 4) |
 | Coverage | Only APIs whose base URL is configurable | All outbound HTTPS |
 | Good for | SDK-based agents (Anthropic/OpenAI/Gemini SDKs) | Black-box agents, MCP clients, mixed tooling |
@@ -340,6 +348,10 @@ Don't push the control plane; this skill is about the local install.
 **CA cert silently rejected by macOS / Linux** — the system trust store was updated but the language runtime uses its own. Set `NODE_EXTRA_CA_CERTS` / `REQUESTS_CA_BUNDLE` / `SSL_CERT_FILE` *in addition* to the OS install.
 
 **CA invalidates after every restart** — `T8_CA_SEED` is not set or was changed. Set it in `.env`, re-install the CA once, never change the seed again.
+
+**HTTPS proxy mode: requests hang, loop, or fail with "connection refused" right after setting `HTTPS_PROXY`** — `NO_PROXY` is missing or incomplete. The agent is trying to reach T8 (or another local service) *through* T8. Set `NO_PROXY=localhost,127.0.0.1,172.18.0.1` at minimum; if the agent runs in a sibling container, confirm the real Docker bridge gateway (`docker network inspect <network> -f '{{(index .IPAM.Config 0).Gateway}}'`) and add it. Add internal compose service names (db, cache, `rule-runner`) that shouldn't be policed.
+
+**A local/internal call is unexpectedly being intercepted (or blocked) by T8** — that destination isn't in `NO_PROXY`, so the proxy is policing it. Add the hostname to `NO_PROXY`. Conversely, if an *upstream* you wanted policed is slipping past T8, make sure it's **not** matched by any `NO_PROXY` entry (a broad domain or wildcard can swallow it).
 
 ## Files this skill writes
 
